@@ -1,0 +1,209 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Pauta">
+<meta name="theme-color" content="#0b5cff">
+<title>Pauta - Jornalismo</title>
+<style>
+  :root{--bg:#f3f5f9;--card:#fff;--tx:#1b1f29;--mut:#6b7280;--bd:#d6dbe4;--pri:#0b5cff;--wa:#25d366}
+  @media (prefers-color-scheme:dark){:root{--bg:#0f1218;--card:#1a1f29;--tx:#eef1f6;--mut:#9aa3b2;--bd:#2c3341}}
+  *{box-sizing:border-box}
+  body{margin:0;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;background:var(--bg);color:var(--tx);
+       padding:env(safe-area-inset-top) 16px calc(env(safe-area-inset-bottom) + 16px)}
+  header{padding:20px 4px 8px}
+  h1{font-size:22px;margin:0}
+  header p{margin:4px 0 0;color:var(--mut);font-size:14px}
+  .card{background:var(--card);border:1px solid var(--bd);border-radius:14px;padding:16px;margin-top:14px}
+  label{display:block;font-size:13px;font-weight:600;color:var(--mut);margin:12px 0 6px}
+  label:first-child{margin-top:0}
+  input{width:100%;font-size:17px;padding:12px;border:1px solid var(--bd);border-radius:10px;background:transparent;color:var(--tx)}
+  input:focus{outline:2px solid var(--pri);border-color:transparent}
+  .btn{display:block;width:100%;border:0;border-radius:12px;padding:14px;font-size:16px;font-weight:700;margin-top:10px;cursor:pointer}
+  .wa{background:var(--wa);color:#fff}
+  .pri{background:var(--pri);color:#fff}
+  .sec{background:transparent;color:var(--tx);border:1px solid var(--bd)}
+  .msg{font-size:14px;margin-top:10px;min-height:18px;color:#d93025}
+  .ok{color:#188038}
+  .aviso{font-size:13px;color:var(--mut);background:var(--bg);border-radius:10px;padding:10px;margin-top:14px;display:none}
+  pre{white-space:pre-wrap;font-family:inherit;font-size:14px;background:var(--bg);border-radius:10px;padding:12px;margin:0}
+  details summary{cursor:pointer;font-weight:600}
+  small{color:var(--mut)}
+</style>
+</head>
+<body>
+<header>
+  <h1>📋 Pauta de Jornalismo</h1>
+  <p>Preencha e envie pelo WhatsApp</p>
+  <div id="avisoModo" class="aviso">⚠️ Modo de visualização: nomes e número salvos valem só enquanto esta página estiver aberta. Publique o arquivo (ex.: GitHub Pages) para salvar de forma permanente.</div>
+</header>
+
+<form id="f" class="card" novalidate>
+  <label for="retranca">Retranca da matéria</label>
+  <input id="retranca" autocomplete="off" autocapitalize="characters" placeholder="Ex.: CHUVA BH">
+
+  <label for="reporter">Repórter</label>
+  <input id="reporter" list="lst-reporter" autocomplete="off" autocapitalize="words">
+  <datalist id="lst-reporter"></datalist>
+
+  <label for="cinegrafista">Repórter cinematográfico</label>
+  <input id="cinegrafista" list="lst-cine" autocomplete="off" autocapitalize="words">
+  <datalist id="lst-cine"></datalist>
+
+  <label for="datahora">Data e hora</label>
+  <input id="datahora" type="datetime-local">
+
+  <div id="msg" class="msg" aria-live="polite"></div>
+
+  <button type="button" class="btn wa" id="btnContato">Enviar para o contato padrão</button>
+  <button type="button" class="btn pri" id="btnEscolher">Escolher contato ou grupo</button>
+  <button type="button" class="btn sec" id="btnCopiar">Copiar texto</button>
+  <button type="button" class="btn sec" id="btnLimpar">Limpar formulário</button>
+</form>
+
+<div class="card">
+  <strong>Pré-visualização</strong>
+  <pre id="preview" style="margin-top:8px"></pre>
+</div>
+
+<details class="card">
+  <summary>⚙️ Configurações</summary>
+  <label for="numero">Número do contato padrão (com DDI e DDD)</label>
+  <input id="numero" type="tel" inputmode="numeric" placeholder="5531999999999">
+  <small>Somente números. Ex.: 55 + 31 + número. Grupos não têm número: use "Escolher contato ou grupo".</small>
+  <button type="button" class="btn sec" id="btnSalvar">Salvar número</button>
+</details>
+
+<script>
+(function(){
+  const $ = id => document.getElementById(id);
+  const K_NUM = 'pauta_numero', K_REP = 'pauta_reporters', K_CINE = 'pauta_cines';
+  const msg = $('msg');
+
+  // Armazenamento seguro: usa localStorage quando permitido.
+  // Em visualizadores com sandbox (OneDrive, Teams, pré-visualização), usa memória sem travar o app.
+  const memoria = {};
+  let persistente = true;
+  const store = (function(){
+    try{
+      const ls = window.localStorage;
+      const t = '__teste__'; ls.setItem(t, t); ls.removeItem(t);
+      return ls;
+    }catch(e){
+      persistente = false;
+      return {
+        getItem: k => (Object.prototype.hasOwnProperty.call(memoria, k) ? memoria[k] : null),
+        setItem: (k, v) => { memoria[k] = String(v); },
+        removeItem: k => { delete memoria[k]; }
+      };
+    }
+  })();
+  if(!persistente) $('avisoModo').style.display = 'block';
+
+  // Abre o WhatsApp funcionando tanto na página publicada quanto dentro de visualizadores
+  function abrirWhatsApp(url){
+    let w = null;
+    try{ w = window.open(url, '_blank'); }catch(e){}
+    if(!w){
+      try{ window.top.location.href = url; }
+      catch(e){ window.location.href = url; }
+    }
+  }
+
+  function agoraLocal(){
+    const d = new Date(); d.setSeconds(0,0);
+    const p = n => String(n).padStart(2,'0');
+    return `${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`;
+  }
+  function fmtData(v){
+    if(!v) return '';
+    const [data, hora] = v.split('T');
+    const [a,m,d] = data.split('-');
+    return `${d}/${m}/${a} às ${hora}`;
+  }
+  function lerLista(k){ try{ return JSON.parse(store.getItem(k)) || []; }catch(e){ return []; } }
+  function salvarNaLista(k, valor){
+    if(!valor) return;
+    const l = lerLista(k).filter(x => x.toLowerCase() !== valor.toLowerCase());
+    l.unshift(valor); store.setItem(k, JSON.stringify(l.slice(0,30)));
+  }
+  function preencherDatalists(){
+    $('lst-reporter').innerHTML = lerLista(K_REP).map(n => `<option value="${n.replace(/"/g,'&quot;')}">`).join('');
+    $('lst-cine').innerHTML = lerLista(K_CINE).map(n => `<option value="${n.replace(/"/g,'&quot;')}">`).join('');
+  }
+  function dados(){
+    return {
+      retranca: $('retranca').value.trim().toUpperCase(),
+      reporter: $('reporter').value.trim(),
+      cine: $('cinegrafista').value.trim(),
+      dh: $('datahora').value
+    };
+  }
+  function texto(){
+    const d = dados();
+    return `*📋 PAUTA*\n\n*Retranca:* ${d.retranca}\n*Repórter:* ${d.reporter}\n*Repórter cinematográfico:* ${d.cine}\n*Data e hora:* ${fmtData(d.dh)}`;
+  }
+  function validar(){
+    const d = dados(); const falta = [];
+    if(!d.retranca) falta.push('Retranca');
+    if(!d.reporter) falta.push('Repórter');
+    if(!d.cine) falta.push('Repórter cinematográfico');
+    if(!d.dh) falta.push('Data e hora');
+    if(falta.length){ aviso('Preencha: ' + falta.join(', ')); return false; }
+    return true;
+  }
+  function aviso(t, ok){ msg.textContent = t; msg.className = 'msg' + (ok ? ' ok' : ''); }
+  function atualizar(){ $('preview').textContent = texto(); }
+  function registrar(){ const d = dados(); salvarNaLista(K_REP, d.reporter); salvarNaLista(K_CINE, d.cine); preencherDatalists(); }
+
+  $('btnContato').addEventListener('click', () => {
+    if(!validar()) return;
+    const num = (store.getItem(K_NUM) || '').replace(/\D/g,'');
+    if(num.length < 10){ aviso('Configure o número padrão em ⚙️ Configurações.'); return; }
+    registrar();
+    abrirWhatsApp(`https://wa.me/${num}?text=${encodeURIComponent(texto())}`);
+  });
+
+  $('btnEscolher').addEventListener('click', () => {
+    if(!validar()) return;
+    registrar();
+    // Sem número: o WhatsApp abre a lista de conversas (contatos e grupos)
+    abrirWhatsApp(`https://wa.me/?text=${encodeURIComponent(texto())}`);
+  });
+
+  $('btnCopiar').addEventListener('click', async () => {
+    if(!validar()) return;
+    try{ await navigator.clipboard.writeText(texto()); aviso('Texto copiado!', true); }
+    catch(e){
+      // Alternativa para ambientes onde a API de área de transferência é bloqueada
+      const ta = document.createElement('textarea');
+      ta.value = texto(); ta.style.position = 'absolute'; ta.style.left = '-9999px';
+      document.body.appendChild(ta); ta.select();
+      let ok = false; try{ ok = document.execCommand('copy'); }catch(err){}
+      ta.remove();
+      aviso(ok ? 'Texto copiado!' : 'Não foi possível copiar automaticamente.', ok);
+    }
+  });
+
+  $('btnLimpar').addEventListener('click', () => {
+    ['retranca','reporter','cinegrafista'].forEach(id => $(id).value = '');
+    $('datahora').value = agoraLocal(); aviso(''); atualizar();
+  });
+
+  $('btnSalvar').addEventListener('click', () => {
+    const n = $('numero').value.replace(/\D/g,'');
+    if(n.length < 10){ aviso('Número inválido. Use DDI + DDD + número.'); return; }
+    store.setItem(K_NUM, n); $('numero').value = n; aviso('Número salvo!', true);
+  });
+
+  document.querySelectorAll('#f input').forEach(i => i.addEventListener('input', () => { aviso(''); atualizar(); }));
+  $('numero').value = store.getItem(K_NUM) || '';
+  $('datahora').value = agoraLocal();
+  preencherDatalists(); atualizar();
+})();
+</script>
+</body>
+</html>
